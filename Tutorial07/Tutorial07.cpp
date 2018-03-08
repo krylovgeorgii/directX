@@ -25,6 +25,18 @@ using namespace DirectX;
 //--------------------------------------------------------------------------------------
 // Structures
 //--------------------------------------------------------------------------------------
+namespace {
+	XMMATRIX rgb2yuv = { 0.299, 0.587, 0.114, 0,
+						-0.147, -0.289, 0.436, 0,
+						0.615, -0.515, -0.100, 0,
+						0, 0, 0, 1 };
+
+	XMMATRIX yuv2rgb = { 1, 0, 1.140, 0,
+						1, -0.395, -0.581, 0,
+						1, 2.032, 0, 0,
+						0, 0, 0, 1 };
+}
+
 struct SimpleVertex
 {
 	XMFLOAT3 Pos;
@@ -44,7 +56,7 @@ struct CBChangeOnResize
 struct CBChangesEveryFrame
 {
 	XMMATRIX mWorld;
-	XMFLOAT4 vMeshColor;
+	int vDisplayMode;
 	XMMATRIX mTransform;
 };
 
@@ -74,11 +86,10 @@ ID3D11Buffer*                       g_pCBNeverChanges = nullptr;
 ID3D11Buffer*                       g_pCBChangeOnResize = nullptr;
 ID3D11Buffer*                       g_pCBChangesEveryFrame = nullptr;
 ID3D11ShaderResourceView*           g_pTextureRV = nullptr;
-ID3D11SamplerState*                 g_pSamplerLinear = nullptr;
+ID3D11SamplerState*					g_pSamplerLinear = nullptr;
 XMMATRIX                            g_World;
 XMMATRIX                            g_View;
 XMMATRIX                            g_Projection;
-XMFLOAT4                            g_vMeshColor(0.7f, 0.7f, 0.7f, 1.0f);
 
 
 //--------------------------------------------------------------------------------------
@@ -412,7 +423,7 @@ HRESULT InitDevice()
 	D3D11_INPUT_ELEMENT_DESC layout[] =
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-	{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 	};
 	UINT numElements = ARRAYSIZE(layout);
 
@@ -446,9 +457,9 @@ HRESULT InitDevice()
 	SimpleVertex vertices[] =
 	{
 		{ XMFLOAT3(-1.0f, -1.0f, 0.0f), XMFLOAT2(0.0f, 0.0f) },
-	{ XMFLOAT3(-1.0f, 1.0f, 0.0f), XMFLOAT2(1.0f, 0.0f) },
-	{ XMFLOAT3(1.0f, 1.0f, 0.0f), XMFLOAT2(1.0f, 1.0f) },
-	{ XMFLOAT3(1.0f, -1.0f, 0.0f), XMFLOAT2(0.0f, 1.0f) },
+		{ XMFLOAT3(-1.0f, 1.0f, 0.0f), XMFLOAT2(1.0f, 0.0f) },
+		{ XMFLOAT3(1.0f, 1.0f, 0.0f), XMFLOAT2(1.0f, 1.0f) },
+		{ XMFLOAT3(1.0f, -1.0f, 0.0f), XMFLOAT2(0.0f, 1.0f) },
 
 	};
 
@@ -517,7 +528,7 @@ HRESULT InitDevice()
 	if (FAILED(hr))
 		return hr;
 
-	// Create the sample state
+	// Create the sample displayMode
 	D3D11_SAMPLER_DESC sampDesc;
 	ZeroMemory(&sampDesc, sizeof(sampDesc));
 	sampDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
@@ -616,7 +627,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 //--------------------------------------------------------------------------------------
 void Render()
 {
-	static uint8_t state = 0;
+	static uint8_t displayMode = 0;
 
 	// Update our time
 	static ULONGLONG timeStart = 0;
@@ -624,34 +635,9 @@ void Render()
 	if (timeStart == 0) { timeStart = timeCur; }
 	if ((timeCur - timeStart) / 1000.0f >= 1) {
 		timeStart = timeCur;
-		++state %= 4;
+		++displayMode %= 4;
 	}
 
-	// Modify the color
-	switch (state) {
-	case 0:
-		g_vMeshColor = { 1, 0, 0, 1 };
-		break;
-	case 1:
-		g_vMeshColor = { 0, 1, 0, 1 };
-		break;
-	case 2:
-		g_vMeshColor = { 0, 0, 1, 1 };
-		break;
-	case 3:
-		g_vMeshColor = { 1, 1, 1, 1 };
-		break;
-	}
-
-	XMMATRIX rgb2yuv = { 0.299, 0.587, 0.114, 0,
-		-0.147, -0.289, 0.436, 0,
-		0.615, -0.515, -0.100, 0,
-		0, 0, 0, 1 };
-
-	XMMATRIX yuv2rgb = { 1, 0, 1.140, 0,
-		1, -0.395, -0.581, 0,
-		1, 2.032, 0, 0,
-		0, 0, 0, 1 };
 	//
 	// Clear the back buffer
 	//
@@ -668,8 +654,8 @@ void Render()
 	//
 	CBChangesEveryFrame cb;
 	cb.mWorld = XMMatrixTranspose(g_World);
-	cb.vMeshColor = g_vMeshColor;
-	cb.mTransform = XMMatrixIdentity();
+	cb.vDisplayMode = displayMode; 
+	cb.mTransform = rgb2yuv;
 	g_pImmediateContext->UpdateSubresource(g_pCBChangesEveryFrame, 0, nullptr, &cb, 0, 0);
 
 
